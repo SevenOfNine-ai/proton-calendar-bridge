@@ -16,3 +16,9 @@
 
 ## Coverage gate
 CI fails if total coverage < 85% (adjustable as codebase grows).
+
+## Cross-platform validation
+CI runs format/vet/test/build on:
+- macOS
+- Linux
+- Windows

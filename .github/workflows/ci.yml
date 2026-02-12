@@ -6,16 +6,34 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-      - name: Format check
+      - name: Format check (non-Windows)
+        if: runner.os != 'Windows'
         run: |
           test -z "$(gofmt -l .)"
+      - name: Format check (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = gofmt -l .
+          if ($files) { Write-Host $files; exit 1 }
       - name: Vet
         run: go vet ./...
-      - name: Coverage gate
+      - name: Test + coverage gate
+        if: runner.os != 'Windows'
         run: ./scripts/coverage_gate.sh 85
+      - name: Test + coverage gate (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/coverage_gate.ps1 -Threshold 85
+      - name: Build all packages
+        run: go build ./...
