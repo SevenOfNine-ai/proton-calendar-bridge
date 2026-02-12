@@ -36,6 +36,7 @@ func New(opts Options) *Server {
 	s := &Server{provider: opts.Provider, auth: opts.Auth, log: logger}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
+	mux.HandleFunc("/v1/capabilities", s.handleCapabilities)
 	mux.HandleFunc("/v1/calendars", s.handleCalendars)
 	mux.HandleFunc("/v1/events", s.handleEvents)
 	mux.HandleFunc("/v1/events/create", s.handleCreateEvent)
@@ -92,6 +93,23 @@ func (s *Server) shutdownOnContext(ctx context.Context) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "provider": s.provider.Name()})
+}
+
+func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	caps := provider.CapabilitySet{ReadOnly: true, WriteSupported: false, Notes: []string{"provider does not expose capability metadata"}}
+	if cp, ok := s.provider.(provider.CapabilityProvider); ok {
+		c, err := cp.Capabilities(r.Context())
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		caps = c
+	}
+	writeJSON(w, http.StatusOK, caps)
 }
 
 func (s *Server) handleCalendars(w http.ResponseWriter, r *http.Request) {

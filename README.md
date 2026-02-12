@@ -3,6 +3,7 @@
 Local-first bridge service for exposing Proton calendar data to local automation tools (e.g., OpenClaw) with explicit security boundaries.
 
 ## Current status
+- ✅ Cross-platform scaffold from day one (macOS/Linux/Windows CI + release builds)
 - ✅ Local API scaffold (HTTP loopback + Unix socket)
 - ✅ Provider abstraction (`CalendarProvider`)
 - ✅ Read-safe ICS provider implementation
@@ -33,6 +34,7 @@ Optional:
 
 ## API quick check
 ```bash
+curl -H "Authorization: Bearer $PCB_BEARER_TOKEN" http://127.0.0.1:9842/v1/capabilities
 curl -H "Authorization: Bearer $PCB_BEARER_TOKEN" http://127.0.0.1:9842/v1/calendars
 ```
 
@@ -56,4 +58,10 @@ go build -tags systray ./cmd/proton-calendar-bridge
 - `SPEC.md`
 - `ARCHITECTURE.md`
 - `TESTING.md`
+- `docs/proton-mail-bridge-local-communication.md`
+- `docs/openclaw-integration.md`
+- `docs/implementation-notes.md`
 - `deep-research-report.md`
+
+## License
+MIT (unchanged)

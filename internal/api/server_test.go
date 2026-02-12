@@ -43,7 +43,18 @@ func TestServerRoutesAndAuth(t *testing.T) {
 		t.Fatalf("health status %d", res.StatusCode)
 	}
 
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/v1/calendars", nil)
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/v1/capabilities", nil)
+	res, _ = http.DefaultClient.Do(req)
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 got %d", res.StatusCode)
+	}
+	req.Header.Set("Authorization", "Bearer t")
+	res, _ = http.DefaultClient.Do(req)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 got %d", res.StatusCode)
+	}
+
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/v1/calendars", nil)
 	res, _ = http.DefaultClient.Do(req)
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 got %d", res.StatusCode)
@@ -168,5 +179,17 @@ func TestServeTCPAndUnixLifecycle(t *testing.T) {
 	}()
 	if err := s.ServeUnix(ctx, sock); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		t.Fatalf("ServeUnix err=%v", err)
+	}
+}
+
+func TestCapabilitiesMethodNotAllowed(t *testing.T) {
+	s := New(Options{Provider: fakeProvider{}, Auth: security.BearerAuth{Enabled: false}})
+	ts := httptest.NewServer(s.httpSrv.Handler)
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/capabilities", bytes.NewBufferString("{}"))
+	res, _ := http.DefaultClient.Do(req)
+	if res.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 got %d", res.StatusCode)
 	}
 }

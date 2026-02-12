@@ -20,6 +20,20 @@ type CalendarProvider interface {
 	DeleteEvent(ctx context.Context, eventID string) error
 }
 
+type CapabilitySet struct {
+	ReadOnly        bool     `json:"read_only"`
+	WriteSupported  bool     `json:"write_supported"`
+	SharedCalendars bool     `json:"shared_calendars"`
+	Attendees       bool     `json:"attendees"`
+	Reminders       bool     `json:"reminders"`
+	Recurrence      bool     `json:"recurrence"`
+	Notes           []string `json:"notes,omitempty"`
+}
+
+type CapabilityProvider interface {
+	Capabilities(ctx context.Context) (CapabilitySet, error)
+}
+
 type NotSupportedError struct {
 	Operation string
 }

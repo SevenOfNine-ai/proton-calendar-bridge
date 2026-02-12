@@ -32,8 +32,29 @@ func NewICSProvider(url string, client HTTPDoer) *ICSProvider {
 
 func (p *ICSProvider) Name() string { return "ics" }
 
+func (p *ICSProvider) Capabilities(context.Context) (CapabilitySet, error) {
+	return CapabilitySet{
+		ReadOnly:        true,
+		WriteSupported:  false,
+		SharedCalendars: true,
+		Attendees:       false,
+		Reminders:       false,
+		Recurrence:      false,
+		Notes: []string{
+			"ICS links are read-only from external systems.",
+			"Data freshness depends on Proton sharing sync cadence.",
+		},
+	}, nil
+}
+
 func (p *ICSProvider) ListCalendars(context.Context) ([]domain.Calendar, error) {
-	return []domain.Calendar{{ID: "ics-default", Name: "Proton ICS (read-only)", ReadOnly: true}}, nil
+	return []domain.Calendar{{
+		ID:          "ics-default",
+		Name:        "Proton ICS (read-only)",
+		ReadOnly:    true,
+		Shared:      true,
+		Permissions: []string{"read"},
+	}}, nil
 }
 
 func (p *ICSProvider) ListEvents(ctx context.Context, calendarID string, from, to time.Time) ([]domain.Event, error) {

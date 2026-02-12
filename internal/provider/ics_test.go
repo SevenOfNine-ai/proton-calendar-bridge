@@ -83,3 +83,14 @@ func TestParseICSTime(t *testing.T) {
 		t.Fatalf("expected all-day parse, got err=%v allDay=%v", err, allDay)
 	}
 }
+
+func TestICSProviderCapabilities(t *testing.T) {
+	p := NewICSProvider("https://x", fakeClient{resp: &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("BEGIN:VCALENDAR\nEND:VCALENDAR"))}})
+	caps, err := p.Capabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !caps.ReadOnly || caps.WriteSupported {
+		t.Fatalf("unexpected capabilities: %+v", caps)
+	}
+}
