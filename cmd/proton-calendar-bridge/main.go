@@ -10,7 +10,6 @@ import (
 
 	"github.com/sevenofnine/proton-calendar-bridge/internal/app"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/config"
-	"github.com/sevenofnine/proton-calendar-bridge/internal/provider"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/tray"
 )
 
@@ -28,7 +27,10 @@ func run(ctx context.Context) error {
 		return err
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level(cfg.LogLevel)}))
-	prov := provider.NewICSProvider(cfg.ICSURL, nil)
+	prov, err := app.BuildProvider(cfg)
+	if err != nil {
+		return err
+	}
 	tr := tray.New("Proton Calendar Bridge", nil)
 	application := app.New(cfg, prov, tr, logger)
 	return application.Run(ctx)

@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/sevenofnine/proton-calendar-bridge/internal/api"
+	"github.com/sevenofnine/proton-calendar-bridge/internal/auth"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/config"
+	"github.com/sevenofnine/proton-calendar-bridge/internal/protonapi"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/provider"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/security"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/tray"
@@ -29,6 +32,22 @@ func New(cfg config.Config, p provider.CalendarProvider, tr tray.App, logger *sl
 		tr = tray.NewNoop()
 	}
 	return &Application{cfg: cfg, provider: p, tray: tr, logger: logger}
+}
+
+func BuildProvider(cfg config.Config) (provider.CalendarProvider, error) {
+	providerType := strings.TrimSpace(cfg.ProviderType)
+	if providerType == "" {
+		providerType = strings.TrimSpace(cfg.Provider)
+	}
+	switch providerType {
+	case "ics":
+		return provider.NewICSProvider(cfg.ICSURL, nil), nil
+	case "proton":
+		client := protonapi.NewClient(protonapi.ClientOptions{})
+		return provider.NewProtonProvider(client, auth.Store{}), nil
+	default:
+		return nil, fmt.Errorf("unsupported provider type: %s", providerType)
+	}
 }
 
 func (a *Application) Run(ctx context.Context) error {

@@ -22,6 +22,9 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.RequestTimeout != 5*time.Second {
 		t.Fatalf("unexpected timeout: %v", cfg.RequestTimeout)
 	}
+	if cfg.ProviderType != "ics" {
+		t.Fatalf("unexpected provider type: %q", cfg.ProviderType)
+	}
 }
 
 func TestValidateErrors(t *testing.T) {
@@ -31,6 +34,7 @@ func TestValidateErrors(t *testing.T) {
 		{Provider: "ics", ICSURL: "", RequireBearerToken: false, RequestTimeout: time.Second, BindAddress: "127.0.0.1:1"},
 		{Provider: "ics", ICSURL: "x", RequireBearerToken: false, RequestTimeout: -1 * time.Second, BindAddress: "127.0.0.1:1"},
 		{Provider: "ics", ICSURL: "x", RequireBearerToken: false, RequestTimeout: time.Second, LogLevel: "trace", BindAddress: "127.0.0.1:1"},
+		{ProviderType: "bogus", RequireBearerToken: false, RequestTimeout: time.Second, LogLevel: "info", BindAddress: "127.0.0.1:1"},
 	}
 	for _, tc := range cases {
 		if tc.RequestTimeout == 0 {

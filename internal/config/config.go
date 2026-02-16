@@ -10,7 +10,8 @@ import (
 )
 
 type Config struct {
-	Provider           string
+	ProviderType       string
+	Provider           string // Deprecated alias for ProviderType.
 	ICSURL             string
 	BindAddress        string
 	UnixSocketPath     string
@@ -22,8 +23,10 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	providerType := getenvDefault("PCB_PROVIDER", "ics")
 	cfg := Config{
-		Provider:           getenvDefault("PCB_PROVIDER", "ics"),
+		ProviderType:       providerType,
+		Provider:           providerType,
 		ICSURL:             strings.TrimSpace(os.Getenv("PCB_ICS_URL")),
 		BindAddress:        getenvDefault("PCB_BIND_ADDRESS", "127.0.0.1:9842"),
 		UnixSocketPath:     strings.TrimSpace(os.Getenv("PCB_UNIX_SOCKET")),
@@ -41,11 +44,22 @@ func Load() (Config, error) {
 }
 
 func (c Config) Validate() error {
-	if c.Provider == "" {
+	providerType := strings.TrimSpace(c.ProviderType)
+	if providerType == "" {
+		providerType = strings.TrimSpace(c.Provider)
+	}
+	if providerType == "" {
 		return errors.New("provider is required")
 	}
-	if c.Provider == "ics" && c.ICSURL == "" {
-		return errors.New("PCB_ICS_URL is required when provider=ics")
+	switch providerType {
+	case "ics":
+		if c.ICSURL == "" {
+			return errors.New("PCB_ICS_URL is required when provider=ics")
+		}
+	case "proton":
+		// Proton provider can boot without preconfigured ICS URL.
+	default:
+		return fmt.Errorf("invalid provider type: %s", providerType)
 	}
 	if c.BindAddress == "" && c.UnixSocketPath == "" {
 		return errors.New("either bind address or unix socket path must be configured")

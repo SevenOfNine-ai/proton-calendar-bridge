@@ -62,3 +62,25 @@ func TestApplicationRunTrayError(t *testing.T) {
 		t.Fatal("expected tray error")
 	}
 }
+
+func TestBuildProvider(t *testing.T) {
+	ics, err := BuildProvider(config.Config{ProviderType: "ics", ICSURL: "https://example.test/a.ics"})
+	if err != nil {
+		t.Fatalf("ics provider: %v", err)
+	}
+	if ics.Name() != "ics" {
+		t.Fatalf("unexpected provider: %s", ics.Name())
+	}
+
+	proton, err := BuildProvider(config.Config{ProviderType: "proton"})
+	if err != nil {
+		t.Fatalf("proton provider: %v", err)
+	}
+	if proton.Name() != "proton" {
+		t.Fatalf("unexpected provider: %s", proton.Name())
+	}
+
+	if _, err := BuildProvider(config.Config{ProviderType: "unknown"}); err == nil {
+		t.Fatal("expected invalid provider error")
+	}
+}
