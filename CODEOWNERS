@@ -1,0 +1,27 @@
+# CODEOWNERS
+#
+# Code owners are automatically requested for review when someone opens a pull request
+# that modifies code that they own. Each line is a file pattern followed by one or more owners.
+#
+# More details: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+* @SevenOfNine-ai
+
+# Security-critical paths
+/cmd/ @SevenOfNine-ai
+/internal/auth/ @SevenOfNine-ai
+/internal/crypto/ @SevenOfNine-ai
+
+# Documentation
+/docs/ @SevenOfNine-ai
+*.md @SevenOfNine-ai
+
+# CI/CD and security configurations
+/.github/ @SevenOfNine-ai
+/.gitignore @SevenOfNine-ai
+/CODEOWNERS @SevenOfNine-ai
+
+# Dependencies
+/go.mod @SevenOfNine-ai
+/go.sum @SevenOfNine-ai
