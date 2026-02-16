@@ -35,6 +35,7 @@ type CalendarAPI interface {
 	GetCalendarPassphrase(ctx context.Context, calendarID string) (proton.CalendarPassphrase, error)
 	GetCalendarEvents(ctx context.Context, calendarID string, page, pageSize int, filter url.Values) ([]proton.CalendarEvent, error)
 	GetCalendarEvent(ctx context.Context, calendarID, eventID string) (proton.CalendarEvent, error)
+	GetAddresses(ctx context.Context) ([]proton.Address, error)
 }
 
 type Client struct {

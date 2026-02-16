@@ -22,3 +22,17 @@ type CalendarPassphrase = proton.CalendarPassphrase
 type MemberPassphrase = proton.MemberPassphrase
 
 type CalendarEvent = proton.CalendarEvent
+type CalendarEventPart = proton.CalendarEventPart
+type CalendarEventType = proton.CalendarEventType
+
+const (
+	CalendarEventTypeClear     = proton.CalendarEventTypeClear
+	CalendarEventTypeEncrypted = proton.CalendarEventTypeEncrypted
+	CalendarEventTypeSigned    = proton.CalendarEventTypeSigned
+)
+
+type Address = proton.Address
+type AddressStatus = proton.AddressStatus
+
+type Key = proton.Key
+type Keys = proton.Keys

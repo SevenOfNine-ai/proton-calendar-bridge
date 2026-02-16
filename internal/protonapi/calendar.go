@@ -102,3 +102,17 @@ func (c *Client) GetCalendarEvent(ctx context.Context, calID, eventID string) (C
 	c.setStatus(StatusConnected)
 	return item, nil
 }
+
+func (c *Client) GetAddresses(ctx context.Context) ([]Address, error) {
+	client, err := c.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	items, err := client.GetAddresses(ctx)
+	if err != nil {
+		c.setStatus(StatusDisconnected)
+		return nil, err
+	}
+	c.setStatus(StatusConnected)
+	return items, nil
+}

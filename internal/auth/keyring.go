@@ -2,26 +2,81 @@ package auth
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/sevenofnine/proton-calendar-bridge/internal/protonapi"
 )
 
-type AddressKeyUnlocker interface {
-	UnlockAddressKeys(ctx context.Context, username string, password string) ([]*crypto.KeyRing, error)
+type keyringClient interface {
+	GetAddresses(ctx context.Context) ([]protonapi.Address, error)
 }
 
-type CalendarPassphraseDecryptor interface {
-	DecryptCalendarPassphrase(ctx context.Context, memberID string, encrypted string, keys []*crypto.KeyRing) (string, error)
+type KeyringManager struct {
+	client keyringClient
 }
 
-type PlaceholderKeyring struct{}
-
-func (PlaceholderKeyring) UnlockAddressKeys(context.Context, string, string) ([]*crypto.KeyRing, error) {
-	// TODO(auth): load and unlock user address keys via gopenpgp.
-	return nil, nil
+func NewKeyringManager(client keyringClient) *KeyringManager {
+	return &KeyringManager{client: client}
 }
 
-func (PlaceholderKeyring) DecryptCalendarPassphrase(context.Context, string, string, []*crypto.KeyRing) (string, error) {
-	// TODO(auth): decrypt calendar member passphrases via address keyring.
-	return "", nil
+func (km *KeyringManager) UnlockAddressKeys(ctx context.Context, keyPassword []byte) (*crypto.KeyRing, error) {
+	if km == nil || km.client == nil {
+		return nil, fmt.Errorf("keyring client is not configured")
+	}
+	if len(keyPassword) == 0 {
+		return nil, fmt.Errorf("key password is required")
+	}
+
+	addresses, err := km.client.GetAddresses(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get addresses: %w", err)
+	}
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("no proton addresses returned")
+	}
+
+	kr, err := crypto.NewKeyRing(nil)
+	if err != nil {
+		return nil, fmt.Errorf("create keyring: %w", err)
+	}
+
+	unlocked := 0
+	for _, addr := range addresses {
+		if len(addr.Keys) == 0 {
+			continue
+		}
+		addrKR, err := km.UnlockAddressKeyRing(addr.Keys, keyPassword)
+		if err != nil {
+			continue
+		}
+		for _, key := range addrKR.GetKeys() {
+			if err := kr.AddKey(key); err != nil {
+				return nil, fmt.Errorf("add key for address %s: %w", addr.ID, err)
+			}
+			unlocked++
+		}
+	}
+
+	if unlocked == 0 {
+		return nil, fmt.Errorf("failed to unlock any address keys")
+	}
+	return kr, nil
+}
+
+func (km *KeyringManager) UnlockAddressKeyRing(addressKeys protonapi.Keys, keyPassword []byte) (*crypto.KeyRing, error) {
+	if len(addressKeys) == 0 {
+		return nil, fmt.Errorf("address keys are required")
+	}
+	if len(keyPassword) == 0 {
+		return nil, fmt.Errorf("key password is required")
+	}
+	kr, err := addressKeys.Unlock(keyPassword, nil)
+	if err != nil {
+		return nil, fmt.Errorf("unlock address keys: %w", err)
+	}
+	if kr == nil || len(kr.GetKeys()) == 0 {
+		return nil, fmt.Errorf("no unlocked address keys")
+	}
+	return kr, nil
 }

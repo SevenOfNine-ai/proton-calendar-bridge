@@ -43,6 +43,7 @@ type fakeCalendarClient struct {
 	passphrase proton.CalendarPassphrase
 	events     []proton.CalendarEvent
 	event      proton.CalendarEvent
+	addresses  []proton.Address
 	err        error
 }
 
@@ -67,6 +68,9 @@ func (f *fakeCalendarClient) GetCalendarEvents(context.Context, string, int, int
 }
 func (f *fakeCalendarClient) GetCalendarEvent(context.Context, string, string) (proton.CalendarEvent, error) {
 	return f.event, f.err
+}
+func (f *fakeCalendarClient) GetAddresses(context.Context) ([]proton.Address, error) {
+	return f.addresses, f.err
 }
 
 func TestClientSetSessionUsesManager(t *testing.T) {
@@ -112,6 +116,9 @@ func TestClientCalendarMethodsAndStatus(t *testing.T) {
 	}
 	if _, err := c.GetCalendarEvent(context.Background(), "c1", "e1"); err != nil {
 		t.Fatalf("GetCalendarEvent: %v", err)
+	}
+	if _, err := c.GetAddresses(context.Background()); err != nil {
+		t.Fatalf("GetAddresses: %v", err)
 	}
 	if c.Status() != StatusConnected {
 		t.Fatalf("expected connected status, got %s", c.Status())
