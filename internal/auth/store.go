@@ -4,12 +4,15 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+
+	"golang.org/x/crypto/argon2"
 )
+
+const saltSize = 16
 
 type Session struct {
 	UID          string `json:"uid"`
@@ -30,7 +33,11 @@ func (s Store) Save(session Session, bridgePassword string) error {
 	if err != nil {
 		return fmt.Errorf("marshal session: %w", err)
 	}
-	key := deriveKey(bridgePassword)
+	salt := make([]byte, saltSize)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return fmt.Errorf("salt: %w", err)
+	}
+	key := deriveKey(bridgePassword, salt)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return fmt.Errorf("cipher: %w", err)
@@ -44,7 +51,7 @@ func (s Store) Save(session Session, bridgePassword string) error {
 		return fmt.Errorf("nonce: %w", err)
 	}
 	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
-	blob := append(nonce, ciphertext...)
+	blob := append(append(salt, nonce...), ciphertext...)
 	if err := os.WriteFile(s.Path, blob, 0o600); err != nil {
 		return fmt.Errorf("write session: %w", err)
 	}
@@ -59,7 +66,11 @@ func (s Store) Load(bridgePassword string) (Session, error) {
 	if err != nil {
 		return Session{}, fmt.Errorf("read session: %w", err)
 	}
-	key := deriveKey(bridgePassword)
+	if len(blob) < saltSize {
+		return Session{}, fmt.Errorf("invalid encrypted session")
+	}
+	salt := blob[:saltSize]
+	key := deriveKey(bridgePassword, salt)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return Session{}, fmt.Errorf("cipher: %w", err)
@@ -68,11 +79,11 @@ func (s Store) Load(bridgePassword string) (Session, error) {
 	if err != nil {
 		return Session{}, fmt.Errorf("gcm: %w", err)
 	}
-	if len(blob) < gcm.NonceSize() {
+	if len(blob) < saltSize+gcm.NonceSize() {
 		return Session{}, fmt.Errorf("invalid encrypted session")
 	}
-	nonce := blob[:gcm.NonceSize()]
-	ciphertext := blob[gcm.NonceSize():]
+	nonce := blob[saltSize : saltSize+gcm.NonceSize()]
+	ciphertext := blob[saltSize+gcm.NonceSize():]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return Session{}, fmt.Errorf("decrypt session: %w", err)
@@ -84,7 +95,6 @@ func (s Store) Load(bridgePassword string) (Session, error) {
 	return session, nil
 }
 
-func deriveKey(password string) []byte {
-	sum := sha256.Sum256([]byte(password))
-	return sum[:]
+func deriveKey(password string, salt []byte) []byte {
+	return argon2.IDKey([]byte(password), salt, 3, 64*1024, 4, 32)
 }
