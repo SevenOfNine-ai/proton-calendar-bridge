@@ -108,7 +108,7 @@ func parseICalDateTime(v string) (time.Time, bool, error) {
 		t, err := time.Parse("20060102", v)
 		return t, true, err
 	}
-	for _, f := range []string{"20060102T150405Z", "20060102T150405"} {
+	for _, f := range []string{"20060102T150405Z", "20060102T150405", "20060102T1504Z", "20060102T1504"} {
 		if t, err := time.Parse(f, v); err == nil {
 			return t, false, nil
 		}

@@ -16,6 +16,7 @@ import (
 type fakeProtonClient struct {
 	calendars            []protonapi.Calendar
 	events               []protonapi.CalendarEvent
+	eventPages           map[int][]protonapi.CalendarEvent
 	members              []protonapi.CalendarMember
 	passphrase           protonapi.CalendarPassphrase
 	keys                 protonapi.CalendarKeys
@@ -24,10 +25,17 @@ type fakeProtonClient struct {
 	calendarMembersCalls int
 	passphraseCalls      int
 	keysCalls            int
+	eventsCalls          int
 }
 
-func (f *fakeProtonClient) GetCalendars(context.Context) ([]protonapi.Calendar, error) { return f.calendars, f.err }
-func (f *fakeProtonClient) GetCalendarEvents(context.Context, string, int, int) ([]protonapi.CalendarEvent, error) {
+func (f *fakeProtonClient) GetCalendars(context.Context) ([]protonapi.Calendar, error) {
+	return f.calendars, f.err
+}
+func (f *fakeProtonClient) GetCalendarEvents(_ context.Context, _ string, page, _ int) ([]protonapi.CalendarEvent, error) {
+	f.eventsCalls++
+	if f.eventPages != nil {
+		return f.eventPages[page], f.err
+	}
 	return f.events, f.err
 }
 func (f *fakeProtonClient) GetCalendarMembers(context.Context, string) ([]protonapi.CalendarMember, error) {
@@ -134,5 +142,79 @@ func TestProtonProviderCalendarKeyringCache(t *testing.T) {
 	}
 	if fake.passphraseCalls != 0 || fake.keysCalls != 0 {
 		t.Fatalf("expected no key derivation calls, got passphrase=%d keys=%d", fake.passphraseCalls, fake.keysCalls)
+	}
+}
+
+func TestProtonProviderListEventsPaginationAndParseDegrade(t *testing.T) {
+	t.Parallel()
+
+	kr, err := gopenpgp.NewKeyRing(nil)
+	if err != nil {
+		t.Fatalf("new keyring: %v", err)
+	}
+
+	validEvent := protonapi.CalendarEvent{
+		ID:         "e-valid",
+		CalendarID: "cal-1",
+		SharedEvents: []proton.CalendarEventPart{{
+			Type: proton.CalendarEventTypeClear,
+			Data: "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Paged\nDTSTART:20260216T090000Z\nDTEND:20260216T100000Z\nEND:VEVENT\nEND:VCALENDAR",
+		}},
+	}
+	invalidEvent := protonapi.CalendarEvent{
+		ID:         "e-invalid",
+		CalendarID: "cal-1",
+		StartTime:  1771232400,
+		EndTime:    1771236000,
+		SharedEvents: []proton.CalendarEventPart{{
+			Type: proton.CalendarEventTypeClear,
+			Data: "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Broken\nEND:VEVENT\nEND:VCALENDAR",
+		}},
+	}
+
+	page0 := make([]protonapi.CalendarEvent, 0, 100)
+	for i := 0; i < 99; i++ {
+		page0 = append(page0, validEvent)
+	}
+	page0 = append(page0, invalidEvent)
+
+	fake := &fakeProtonClient{
+		eventPages: map[int][]protonapi.CalendarEvent{
+			0: page0,
+			1: []protonapi.CalendarEvent{validEvent},
+			2: []protonapi.CalendarEvent{},
+		},
+	}
+
+	p := &ProtonProvider{
+		client:      fake,
+		store:       auth.Store{},
+		decryptor:   &bridgecrypto.EventDecryptor{},
+		calendarKRs: map[string]*gopenpgp.KeyRing{"cal-1": kr},
+		addressKR:   kr,
+	}
+
+	events, err := p.ListEvents(context.Background(), "cal-1", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if fake.eventsCalls != 2 {
+		t.Fatalf("expected 2 paged event calls, got %d", fake.eventsCalls)
+	}
+	if len(events) != 101 {
+		t.Fatalf("expected 101 events, got %d", len(events))
+	}
+
+	var degraded bool
+	for _, e := range events {
+		if e.ID == "e-invalid" {
+			degraded = true
+			if e.Title != "[parse error]" {
+				t.Fatalf("expected parse error degraded title, got %q", e.Title)
+			}
+		}
+	}
+	if !degraded {
+		t.Fatal("expected degraded event in output")
 	}
 }

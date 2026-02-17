@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -23,14 +24,14 @@ type protonCalendarClient interface {
 }
 
 type ProtonProvider struct {
-	client       protonCalendarClient
-	store        auth.Store
-	keyPassword  []byte
-	keyrings     *auth.KeyringManager
-	decryptor    *bridgecrypto.EventDecryptor
-	mu           sync.RWMutex
-	addressKR    *gopenpgp.KeyRing
-	calendarKRs  map[string]*gopenpgp.KeyRing
+	client      protonCalendarClient
+	store       auth.Store
+	keyPassword []byte
+	keyrings    *auth.KeyringManager
+	decryptor   *bridgecrypto.EventDecryptor
+	mu          sync.RWMutex
+	addressKR   *gopenpgp.KeyRing
+	calendarKRs map[string]*gopenpgp.KeyRing
 }
 
 func NewProtonProvider(client *protonapi.Client, store auth.Store) *ProtonProvider {
@@ -100,9 +101,17 @@ func (p *ProtonProvider) ListEvents(ctx context.Context, calendarID string, from
 	if calendarID == "" {
 		return nil, fmt.Errorf("calendar id is required")
 	}
-	items, err := p.client.GetCalendarEvents(ctx, calendarID, 0, 100)
-	if err != nil {
-		return nil, err
+	const pageSize = 100
+	var items []protonapi.CalendarEvent
+	for page := 0; ; page++ {
+		batch, err := p.client.GetCalendarEvents(ctx, calendarID, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, batch...)
+		if len(batch) < pageSize {
+			break
+		}
 	}
 
 	calKR, err := p.calendarKeyRing(ctx, calendarID)
@@ -118,10 +127,28 @@ func (p *ProtonProvider) ListEvents(ctx context.Context, calendarID string, from
 	for _, item := range items {
 		dec, err := p.decryptor.DecryptEvent(item, calKR, addrKR)
 		if err != nil {
+			slog.Warn("failed to decrypt event", "event_id", item.ID, "error", err)
+			out = append(out, domain.Event{
+				ID:         item.ID,
+				CalendarID: item.CalendarID,
+				Title:      "[decrypt error]",
+				Start:      time.Unix(item.StartTime, 0).UTC(),
+				End:        time.Unix(item.EndTime, 0).UTC(),
+				AllDay:     bool(item.FullDay),
+			})
 			continue
 		}
 		parsed, err := bridgecrypto.ParseVCalendar(dec.SharedData, dec.PersonalData)
 		if err != nil {
+			slog.Warn("failed to parse event", "event_id", item.ID, "error", err)
+			out = append(out, domain.Event{
+				ID:         item.ID,
+				CalendarID: item.CalendarID,
+				Title:      "[parse error]",
+				Start:      time.Unix(item.StartTime, 0).UTC(),
+				End:        time.Unix(item.EndTime, 0).UTC(),
+				AllDay:     bool(item.FullDay),
+			})
 			continue
 		}
 
@@ -157,6 +184,13 @@ func (p *ProtonProvider) addressKeyRing(ctx context.Context) (*gopenpgp.KeyRing,
 	}
 	p.mu.RUnlock()
 
+	p.mu.Lock()
+	if p.addressKR != nil {
+		defer p.mu.Unlock()
+		return p.addressKR, nil
+	}
+	p.mu.Unlock()
+
 	if p.keyrings == nil {
 		return nil, fmt.Errorf("keyring manager is not configured")
 	}
@@ -164,9 +198,13 @@ func (p *ProtonProvider) addressKeyRing(ctx context.Context) (*gopenpgp.KeyRing,
 	if err != nil {
 		return nil, fmt.Errorf("unlock address keys: %w", err)
 	}
+
 	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.addressKR != nil {
+		return p.addressKR, nil
+	}
 	p.addressKR = kr
-	p.mu.Unlock()
 	return kr, nil
 }
 
@@ -177,6 +215,13 @@ func (p *ProtonProvider) calendarKeyRing(ctx context.Context, calendarID string)
 		return kr, nil
 	}
 	p.mu.RUnlock()
+
+	p.mu.Lock()
+	if kr, ok := p.calendarKRs[calendarID]; ok && kr != nil {
+		defer p.mu.Unlock()
+		return kr, nil
+	}
+	p.mu.Unlock()
 
 	addrKR, err := p.addressKeyRing(ctx)
 	if err != nil {
@@ -211,8 +256,11 @@ func (p *ProtonProvider) calendarKeyRing(ctx context.Context, calendarID string)
 	}
 
 	p.mu.Lock()
+	defer p.mu.Unlock()
+	if kr, ok := p.calendarKRs[calendarID]; ok && kr != nil {
+		return kr, nil
+	}
 	p.calendarKRs[calendarID] = calKR
-	p.mu.Unlock()
 	return calKR, nil
 }
 

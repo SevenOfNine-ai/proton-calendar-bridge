@@ -1,6 +1,9 @@
 package crypto
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestParseVCalendar(t *testing.T) {
 	t.Parallel()
@@ -21,5 +24,21 @@ func TestParseVCalendar(t *testing.T) {
 	}
 	if len(parsed.Reminders) != 1 || parsed.Reminders[0] != "-PT10M" {
 		t.Fatalf("unexpected reminders: %+v", parsed.Reminders)
+	}
+}
+
+func TestParseVCalendarTZIDLocalDateTime(t *testing.T) {
+	t.Parallel()
+
+	shared := "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Berlin Morning\nDTSTART;TZID=Europe/Berlin:20260216T090000\nDTEND;TZID=Europe/Berlin:20260216T100000\nEND:VEVENT\nEND:VCALENDAR"
+
+	parsed, err := ParseVCalendar(shared, "")
+	if err != nil {
+		t.Fatalf("parse vcalendar: %v", err)
+	}
+
+	want := time.Date(2026, 2, 16, 9, 0, 0, 0, time.UTC)
+	if !parsed.Start.Equal(want) {
+		t.Fatalf("unexpected DTSTART: got %v want %v", parsed.Start, want)
 	}
 }
