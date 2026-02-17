@@ -1,0 +1,13 @@
+[book]
+title = "Proton Calendar Bridge"
+authors = ["Seven of Nine", "Carlo van Driesten"]
+description = "Architecture documentation for the Proton Calendar Bridge"
+src = "book/src"
+
+[build]
+build-dir = "book/build"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/SevenOfNine-ai/proton-calendar-bridge"
