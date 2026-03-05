@@ -53,6 +53,15 @@ func (f *fakeProtonClient) GetCalendarKeys(context.Context, string) (protonapi.C
 func (f *fakeProtonClient) GetAddresses(context.Context) ([]protonapi.Address, error) {
 	return f.addresses, f.err
 }
+func (f *fakeProtonClient) CreateCalendarEvent(_ context.Context, _ string, _ protonapi.CreateCalendarEventReq) (protonapi.CalendarEvent, error) {
+	return protonapi.CalendarEvent{}, f.err
+}
+func (f *fakeProtonClient) UpdateCalendarEvent(_ context.Context, _, _ string, _ protonapi.CreateCalendarEventReq) (protonapi.CalendarEvent, error) {
+	return protonapi.CalendarEvent{}, f.err
+}
+func (f *fakeProtonClient) DeleteCalendarEvent(_ context.Context, _, _ string) error {
+	return f.err
+}
 
 func TestProtonProviderMappingAndEvents(t *testing.T) {
 	t.Parallel()

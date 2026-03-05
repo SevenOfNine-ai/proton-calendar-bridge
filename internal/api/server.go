@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/sevenofnine/proton-calendar-bridge/internal/caldav"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/domain"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/provider"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/security"
@@ -42,6 +43,12 @@ func New(opts Options) *Server {
 	mux.HandleFunc("/v1/events/create", s.handleCreateEvent)
 	mux.HandleFunc("/v1/events/update", s.handleUpdateEvent)
 	mux.HandleFunc("/v1/events/delete", s.handleDeleteEvent)
+
+	// CalDAV endpoint — GNOME Calendar / evolution-data-server compatible.
+	// Clients should point to: http://<host>/caldav/
+	caldavHandler := caldav.New(opts.Provider, logger)
+	mux.Handle("/caldav/", http.StripPrefix("/caldav", caldavHandler))
+
 	s.httpSrv = &http.Server{Handler: s.wrapAuth(mux), ReadHeaderTimeout: 5 * time.Second}
 	return s
 }
@@ -76,7 +83,16 @@ func (s *Server) ServeUnix(ctx context.Context, path string) error {
 
 func (s *Server) wrapAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// /healthz is always public.
+		// CalDAV paths (/caldav/*) use standard HTTP Basic auth which is handled
+		// by the same Authorize check (Bearer token in the Authorization header).
 		if r.URL.Path != "/healthz" && !s.auth.Authorize(r) {
+			// For CalDAV clients that don't send auth on the first request,
+			// advertise WWW-Authenticate so they know to send credentials.
+			if isCalDAVPath(r.URL.Path) {
+				w.Header().Set("WWW-Authenticate", `Basic realm="Proton Calendar Bridge"`)
+				w.Header().Set("DAV", "1, 3, calendar-access")
+			}
 			writeErr(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -194,4 +210,9 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+// isCalDAVPath returns true if the request path is under /caldav/.
+func isCalDAVPath(path string) bool {
+	return len(path) >= 7 && path[:7] == "/caldav"
 }

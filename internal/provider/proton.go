@@ -8,6 +8,7 @@ import (
 	"time"
 
 	gopenpgp "github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/google/uuid"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/auth"
 	bridgecrypto "github.com/sevenofnine/proton-calendar-bridge/internal/crypto"
 	"github.com/sevenofnine/proton-calendar-bridge/internal/domain"
@@ -21,6 +22,9 @@ type protonCalendarClient interface {
 	GetCalendarPassphrase(ctx context.Context, id string) (protonapi.CalendarPassphrase, error)
 	GetCalendarKeys(ctx context.Context, id string) (protonapi.CalendarKeys, error)
 	GetAddresses(ctx context.Context) ([]protonapi.Address, error)
+	CreateCalendarEvent(ctx context.Context, calendarID string, req protonapi.CreateCalendarEventReq) (protonapi.CalendarEvent, error)
+	UpdateCalendarEvent(ctx context.Context, calendarID, eventID string, req protonapi.CreateCalendarEventReq) (protonapi.CalendarEvent, error)
+	DeleteCalendarEvent(ctx context.Context, calendarID, eventID string) error
 }
 
 type ProtonProvider struct {
@@ -53,13 +57,12 @@ func (p *ProtonProvider) Name() string { return "proton" }
 
 func (p *ProtonProvider) Capabilities(context.Context) (CapabilitySet, error) {
 	return CapabilitySet{
-		ReadOnly:        true,
-		WriteSupported:  false,
+		ReadOnly:        false,
+		WriteSupported:  true,
 		SharedCalendars: true,
 		Attendees:       true,
 		Reminders:       true,
 		Recurrence:      true,
-		Notes:           []string{"Proton provider is read-only during Phase 2."},
 	}, nil
 }
 
@@ -176,6 +179,222 @@ func (p *ProtonProvider) ListEvents(ctx context.Context, calendarID string, from
 	return out, nil
 }
 
+// CreateEvent encrypts the event mutation and submits it to the Proton Calendar API.
+func (p *ProtonProvider) CreateEvent(ctx context.Context, in domain.EventMutation) (domain.Event, error) {
+	if p.client == nil {
+		return domain.Event{}, fmt.Errorf("proton client is not configured")
+	}
+	if in.CalendarID == "" {
+		return domain.Event{}, fmt.Errorf("calendar_id is required")
+	}
+
+	calKR, err := p.calendarKeyRing(ctx, in.CalendarID)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("get calendar key ring: %w", err)
+	}
+	addrKR, err := p.addressKeyRing(ctx)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("get address key ring: %w", err)
+	}
+	memberID, err := p.calendarMemberID(ctx, in.CalendarID)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("get member id: %w", err)
+	}
+
+	uid := uuid.New().String() + "@proton.me"
+	req, err := p.buildEventReq(in, uid, calKR, addrKR, memberID)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("build event request: %w", err)
+	}
+
+	created, err := p.client.CreateCalendarEvent(ctx, in.CalendarID, req)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("create event: %w", err)
+	}
+
+	return protonEventToDomain(created, in), nil
+}
+
+// UpdateEvent re-encrypts the updated event and submits it to the Proton Calendar API.
+func (p *ProtonProvider) UpdateEvent(ctx context.Context, eventID string, in domain.EventMutation) (domain.Event, error) {
+	if p.client == nil {
+		return domain.Event{}, fmt.Errorf("proton client is not configured")
+	}
+	if eventID == "" {
+		return domain.Event{}, fmt.Errorf("event_id is required")
+	}
+	if in.CalendarID == "" {
+		return domain.Event{}, fmt.Errorf("calendar_id is required")
+	}
+
+	calKR, err := p.calendarKeyRing(ctx, in.CalendarID)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("get calendar key ring: %w", err)
+	}
+	addrKR, err := p.addressKeyRing(ctx)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("get address key ring: %w", err)
+	}
+	memberID, err := p.calendarMemberID(ctx, in.CalendarID)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("get member id: %w", err)
+	}
+
+	// Parse calendarID from composite eventID if present.
+	calendarID := in.CalendarID
+	rawEventID := eventID
+	if cID, eID, err := splitCalendarEventID(eventID); err == nil {
+		calendarID = cID
+		rawEventID = eID
+	}
+
+	uid := uuid.New().String() + "@proton.me"
+	req, err := p.buildEventReq(in, uid, calKR, addrKR, memberID)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("build event request: %w", err)
+	}
+
+	updated, err := p.client.UpdateCalendarEvent(ctx, calendarID, rawEventID, req)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("update event: %w", err)
+	}
+
+	return protonEventToDomain(updated, in), nil
+}
+
+// DeleteEvent removes an event from the Proton Calendar.
+// eventID must be in "calendarID:eventID" format (as returned by CreateEvent/UpdateEvent).
+func (p *ProtonProvider) DeleteEvent(ctx context.Context, eventID string) error {
+	if p.client == nil {
+		return fmt.Errorf("proton client is not configured")
+	}
+	if eventID == "" {
+		return fmt.Errorf("event_id is required")
+	}
+	calendarID, rawEventID, err := splitCalendarEventID(eventID)
+	if err != nil {
+		return fmt.Errorf("delete event: %w", err)
+	}
+	return p.client.DeleteCalendarEvent(ctx, calendarID, rawEventID)
+}
+
+// buildEventReq assembles a CreateCalendarEventReq from an EventMutation by
+// encoding the VCALENDAR text and encrypting it for the Proton API.
+func (p *ProtonProvider) buildEventReq(
+	in domain.EventMutation,
+	uid string,
+	calKR, addrKR *gopenpgp.KeyRing,
+	memberID string,
+) (protonapi.CreateCalendarEventReq, error) {
+	sharedVCal := bridgecrypto.EncodeSharedVCalendar(in, uid)
+	personalVCal := bridgecrypto.EncodePersonalVCalendar(in.Reminders, uid)
+
+	encShared, err := bridgecrypto.EncryptSharedEvent(sharedVCal, calKR, addrKR)
+	if err != nil {
+		return protonapi.CreateCalendarEventReq{}, fmt.Errorf("encrypt shared event: %w", err)
+	}
+
+	encPersonal, err := bridgecrypto.EncryptPersonalEvent(personalVCal, addrKR)
+	if err != nil {
+		return protonapi.CreateCalendarEventReq{}, fmt.Errorf("encrypt personal event: %w", err)
+	}
+
+	fullDay := 0
+	if in.AllDay {
+		fullDay = 1
+	}
+
+	req := protonapi.CreateCalendarEventReq{
+		MajorVersion:    1,
+		UID:             uid,
+		IsOrganizer:     1,
+		Permissions:     3,
+		SharedKeyPacket: encShared.KeyPacket,
+		SharedEventContent: []protonapi.CalendarEventPartReq{
+			{
+				Type:      3, // encrypted + signed
+				Data:      encShared.DataPacket,
+				Signature: encShared.Signature,
+			},
+		},
+		StartTime:     in.Start.Unix(),
+		StartTimezone: "UTC",
+		EndTime:       in.End.Unix(),
+		EndTimezone:   "UTC",
+		FullDay:       fullDay,
+		RRule:         in.Recurrence,
+	}
+
+	if encPersonal.Data != "" {
+		req.PersonalEventContent = []protonapi.CalendarEventPartReq{
+			{
+				MemberID:  memberID,
+				Type:      3, // encrypted + signed
+				Data:      encPersonal.Data,
+				Signature: encPersonal.Signature,
+			},
+		}
+	}
+
+	return req, nil
+}
+
+// calendarMemberID returns the first member ID for a calendar.
+func (p *ProtonProvider) calendarMemberID(ctx context.Context, calendarID string) (string, error) {
+	members, err := p.client.GetCalendarMembers(ctx, calendarID)
+	if err != nil {
+		return "", fmt.Errorf("get calendar members: %w", err)
+	}
+	if len(members) == 0 {
+		return "", fmt.Errorf("calendar %s has no members", calendarID)
+	}
+	return members[0].ID, nil
+}
+
+// protonEventToDomain converts a CalendarEvent returned by the Proton API
+// (after create/update) into a domain.Event. Fields not echoed back by the API
+// are filled from the original mutation.
+func protonEventToDomain(e protonapi.CalendarEvent, in domain.EventMutation) domain.Event {
+	start := time.Unix(e.StartTime, 0).UTC()
+	end := time.Unix(e.EndTime, 0).UTC()
+	if start.IsZero() {
+		start = in.Start
+	}
+	if end.IsZero() {
+		end = in.End
+	}
+	now := time.Now().UTC()
+	// Encode as "calendarID:eventID" so Delete can reconstruct the API path.
+	id := e.ID
+	if e.CalendarID != "" {
+		id = e.CalendarID + ":" + e.ID
+	}
+	return domain.Event{
+		ID:          id,
+		CalendarID:  e.CalendarID,
+		Title:       in.Title,
+		Description: in.Description,
+		Location:    in.Location,
+		Start:       start,
+		End:         end,
+		AllDay:      bool(e.FullDay),
+		Recurrence:  in.Recurrence,
+		Attendees:   in.Attendees,
+		Reminders:   in.Reminders,
+		UpdatedAt:   &now,
+	}
+}
+
+// splitCalendarEventID parses a "calendarID:eventID" compound identifier.
+func splitCalendarEventID(id string) (calendarID, eventID string, err error) {
+	for i, c := range id {
+		if c == ':' {
+			return id[:i], id[i+1:], nil
+		}
+	}
+	return "", "", fmt.Errorf("event id %q must be in 'calendarID:eventID' format", id)
+}
+
 func (p *ProtonProvider) addressKeyRing(ctx context.Context) (*gopenpgp.KeyRing, error) {
 	p.mu.RLock()
 	if p.addressKR != nil {
@@ -262,16 +481,4 @@ func (p *ProtonProvider) calendarKeyRing(ctx context.Context, calendarID string)
 	}
 	p.calendarKRs[calendarID] = calKR
 	return calKR, nil
-}
-
-func (p *ProtonProvider) CreateEvent(context.Context, domain.EventMutation) (domain.Event, error) {
-	return domain.Event{}, NotSupportedError{Operation: "create_event"}
-}
-
-func (p *ProtonProvider) UpdateEvent(context.Context, string, domain.EventMutation) (domain.Event, error) {
-	return domain.Event{}, NotSupportedError{Operation: "update_event"}
-}
-
-func (p *ProtonProvider) DeleteEvent(context.Context, string) error {
-	return NotSupportedError{Operation: "delete_event"}
 }
