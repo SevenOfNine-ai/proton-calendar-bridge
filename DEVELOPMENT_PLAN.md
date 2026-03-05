@@ -180,11 +180,14 @@ EncodeSharedVCalendar()          EncodePersonalVCalendar()
 ## 7. Success Criteria
 
 - [x] `go build ./...` passes with no errors
-- [ ] `POST /v1/events/create` returns a real `domain.Event` (not 501)
-- [ ] `POST /v1/events/update` updates an event
-- [ ] `POST /v1/events/delete` deletes an event
-- [ ] `GET /v1/capabilities` returns `"write_supported": true` for Proton provider
-- [ ] `PROPFIND http://127.0.0.1:9842/caldav/` returns valid CalDAV XML
-- [ ] GNOME Online Accounts can add the bridge as a CalDAV account
-- [ ] GNOME Calendar shows events from Proton Calendar
-- [ ] Creating an event in GNOME Calendar syncs to Proton Calendar
+- [x] `POST /v1/events/create` returns a real `domain.Event` (not 501)
+- [x] `POST /v1/events/update` updates an event
+- [x] `POST /v1/events/delete` deletes an event
+- [x] `GET /v1/capabilities` returns `"write_supported": true` for Proton provider
+- [x] `PROPFIND http://127.0.0.1:9842/caldav/` returns valid CalDAV XML
+- [ ] GNOME Online Accounts can add the bridge as a CalDAV account (manual verification required)
+- [ ] GNOME Calendar shows events from Proton Calendar (manual verification required)
+- [ ] Creating an event in GNOME Calendar syncs to Proton Calendar (manual verification required)
+
+Items marked manual require a live Proton account; they are not exercised in CI.
+See TESTING.md for the smoke-test procedure.
