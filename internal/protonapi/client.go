@@ -38,6 +38,15 @@ type CalendarAPI interface {
 	GetAddresses(ctx context.Context) ([]proton.Address, error)
 }
 
+// CalendarWriteClient is implemented by *Client and provides write operations
+// against the Proton Calendar API. These are implemented via direct HTTP calls
+// because go-proton-api v0.4.0 does not expose write endpoints.
+type CalendarWriteClient interface {
+	CreateCalendarEvent(ctx context.Context, calendarID string, req CreateCalendarEventReq) (CalendarEvent, error)
+	UpdateCalendarEvent(ctx context.Context, calendarID, eventID string, req CreateCalendarEventReq) (CalendarEvent, error)
+	DeleteCalendarEvent(ctx context.Context, calendarID, eventID string) error
+}
+
 type Client struct {
 	manager ManagerAPI
 	client  CalendarAPI
