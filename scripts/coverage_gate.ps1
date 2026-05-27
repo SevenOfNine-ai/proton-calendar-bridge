@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 go test ./... -coverprofile=coverage.out
-$line = go tool cover -func=coverage.out | Select-String 'total:' | Select-Object -Last 1
+$line = go tool cover --func coverage.out | Select-String 'total:' | Select-Object -Last 1
 if (-not $line) { throw 'Unable to parse coverage output.' }
 $parts = $line.ToString().Trim() -split '\s+'
 $totalText = $parts[-1].TrimEnd('%')
