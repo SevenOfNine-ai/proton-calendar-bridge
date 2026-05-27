@@ -43,3 +43,63 @@ func TestKeyringManagerUnlockAddressKeyRing(t *testing.T) {
 		t.Fatal("expected unlocked keys")
 	}
 }
+
+func TestKeyringManagerUnlockAddressKeysEmptyPassword(t *testing.T) {
+	t.Parallel()
+
+	km := NewKeyringManager(fakeKeyringClient{addresses: []proton.Address{}})
+	if _, err := km.UnlockAddressKeys(context.Background(), []byte("")); err == nil {
+		t.Fatal("expected error for empty password")
+	}
+}
+
+func TestKeyringManagerUnlockAddressKeysNilClient(t *testing.T) {
+	t.Parallel()
+
+	km := NewKeyringManager(nil)
+	if _, err := km.UnlockAddressKeys(context.Background(), []byte("pass")); err == nil {
+		t.Fatal("expected error for nil client")
+	}
+}
+
+func TestKeyringManagerUnlockAddressKeysNoAddresses(t *testing.T) {
+	t.Parallel()
+
+	km := NewKeyringManager(fakeKeyringClient{addresses: []proton.Address{}})
+	if _, err := km.UnlockAddressKeys(context.Background(), []byte("pass")); err == nil {
+		t.Fatal("expected error for no addresses")
+	}
+}
+
+func TestKeyringManagerUnlockAddressKeysAddressesNoKeys(t *testing.T) {
+	t.Parallel()
+
+	km := NewKeyringManager(fakeKeyringClient{addresses: []proton.Address{{ID: "a1", Keys: proton.Keys{}}}})
+	if _, err := km.UnlockAddressKeys(context.Background(), []byte("pass")); err == nil {
+		t.Fatal("expected error when addresses have no keys")
+	}
+}
+
+func TestKeyringManagerUnlockAddressKeyRingEmptyInput(t *testing.T) {
+	t.Parallel()
+
+	km := &KeyringManager{}
+	if _, err := km.UnlockAddressKeyRing(proton.Keys{}, []byte("pass")); err == nil {
+		t.Fatal("expected error for empty keys")
+	}
+	if _, err := km.UnlockAddressKeyRing(proton.Keys{}, []byte("")); err == nil {
+		t.Fatal("expected error for empty password")
+	}
+}
+
+func TestNewKeyringManager(t *testing.T) {
+	t.Parallel()
+
+	km := NewKeyringManager(fakeKeyringClient{addresses: []proton.Address{}})
+	if km == nil {
+		t.Fatal("expected non-nil keyring manager")
+	}
+	if km.client == nil {
+		t.Fatal("expected non-nil client")
+	}
+}

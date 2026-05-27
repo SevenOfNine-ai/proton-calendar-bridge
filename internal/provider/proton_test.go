@@ -218,3 +218,180 @@ func TestProtonProviderListEventsPaginationAndParseDegrade(t *testing.T) {
 		t.Fatal("expected degraded event in output")
 	}
 }
+
+func TestNewProtonProvider(t *testing.T) {
+	t.Parallel()
+
+	client := &protonapi.Client{}
+	store := auth.Store{}
+
+	p := NewProtonProvider(client, store)
+	if p == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if p.client == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if p.store.Path != store.Path {
+		t.Fatal("expected store to be set")
+	}
+	if p.keyrings == nil {
+		t.Fatal("expected non-nil keyrings")
+	}
+	if p.decryptor == nil {
+		t.Fatal("expected non-nil decryptor")
+	}
+	if p.calendarKRs == nil {
+		t.Fatal("expected non-nil calendarKRs")
+	}
+}
+
+func TestNewProtonProviderWithKeyPassword(t *testing.T) {
+	t.Parallel()
+
+	client := &protonapi.Client{}
+	store := auth.Store{}
+	keyPassword := []byte("test-password")
+
+	p := NewProtonProviderWithKeyPassword(client, store, keyPassword)
+	if p == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if p.keyPassword == nil {
+		t.Fatal("expected non-nil keyPassword")
+	}
+	if string(p.keyPassword) != string(keyPassword) {
+		t.Fatal("expected keyPassword to match")
+	}
+}
+
+func TestProtonProviderCapabilities(t *testing.T) {
+	t.Parallel()
+
+	p := &ProtonProvider{}
+	caps, err := p.Capabilities(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !caps.ReadOnly {
+		t.Fatal("expected ReadOnly to be true")
+	}
+	if caps.WriteSupported {
+		t.Fatal("expected WriteSupported to be false")
+	}
+	if !caps.SharedCalendars {
+		t.Fatal("expected SharedCalendars to be true")
+	}
+	if !caps.Attendees {
+		t.Fatal("expected Attendees to be true")
+	}
+	if !caps.Reminders {
+		t.Fatal("expected Reminders to be true")
+	}
+	if !caps.Recurrence {
+		t.Fatal("expected Recurrence to be true")
+	}
+	if len(caps.Notes) == 0 {
+		t.Fatal("expected Notes to be non-empty")
+	}
+}
+
+func TestProtonProviderListCalendarsNilClient(t *testing.T) {
+	t.Parallel()
+
+	p := &ProtonProvider{client: nil}
+	_, err := p.ListCalendars(context.Background())
+	if err == nil {
+		t.Fatal("expected error for nil client")
+	}
+}
+
+func TestProtonProviderListEventsNilClient(t *testing.T) {
+	t.Parallel()
+
+	p := &ProtonProvider{client: nil}
+	_, err := p.ListEvents(context.Background(), "cal-1", time.Time{}, time.Time{})
+	if err == nil {
+		t.Fatal("expected error for nil client")
+	}
+}
+
+func TestProtonProviderListEventsEmptyCalendarID(t *testing.T) {
+	t.Parallel()
+
+	p := &ProtonProvider{client: &protonapi.Client{}}
+	_, err := p.ListEvents(context.Background(), "", time.Time{}, time.Time{})
+	if err == nil {
+		t.Fatal("expected error for empty calendar ID")
+	}
+}
+
+func TestProtonProviderAddressKeyRingCached(t *testing.T) {
+	t.Parallel()
+
+	kr, err := gopenpgp.NewKeyRing(nil)
+	if err != nil {
+		t.Fatalf("new keyring: %v", err)
+	}
+
+	p := &ProtonProvider{addressKR: kr}
+	result, err := p.addressKeyRing(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != kr {
+		t.Fatal("expected cached keyring")
+	}
+}
+
+func TestProtonProviderAddressKeyRingWithKeyrings(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeProtonClient{addresses: []protonapi.Address{}}
+	km := auth.NewKeyringManager(fake)
+
+	p := &ProtonProvider{keyrings: km, keyPassword: []byte("pass")}
+	// This will fail because addresses is empty, but tests the path
+	_, err := p.addressKeyRing(context.Background())
+	if err == nil {
+		t.Fatal("expected error for empty addresses")
+	}
+}
+
+func TestProtonProviderCalendarKeyRingCached(t *testing.T) {
+	t.Parallel()
+
+	kr, err := gopenpgp.NewKeyRing(nil)
+	if err != nil {
+		t.Fatalf("new keyring: %v", err)
+	}
+
+	p := &ProtonProvider{calendarKRs: map[string]*gopenpgp.KeyRing{"cal-1": kr}}
+	result, err := p.calendarKeyRing(context.Background(), "cal-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != kr {
+		t.Fatal("expected cached keyring")
+	}
+}
+
+func TestProtonProviderCalendarKeyRingNotCached(t *testing.T) {
+	t.Parallel()
+
+	// Test the error path when client is nil
+	p := &ProtonProvider{calendarKRs: map[string]*gopenpgp.KeyRing{}}
+	_, err := p.calendarKeyRing(context.Background(), "cal-1")
+	if err == nil {
+		t.Fatal("expected error for missing calendar keyring")
+	}
+}
+
+func TestProtonProviderName(t *testing.T) {
+	t.Parallel()
+
+	p := &ProtonProvider{}
+	if p.Name() != "proton" {
+		t.Fatalf("expected name 'proton', got %q", p.Name())
+	}
+}
