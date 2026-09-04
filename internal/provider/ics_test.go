@@ -94,3 +94,39 @@ func TestICSProviderCapabilities(t *testing.T) {
 		t.Fatalf("unexpected capabilities: %+v", caps)
 	}
 }
+
+func TestNewICSProvider(t *testing.T) {
+	t.Parallel()
+
+	p := NewICSProvider("https://example.com/cal.ics", nil)
+	if p == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if p.url != "https://example.com/cal.ics" {
+		t.Fatalf("unexpected URL: %q", p.url)
+	}
+	if p.client == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if p.now == nil {
+		t.Fatal("expected non-nil now function")
+	}
+}
+
+func TestNewICSProviderNilClient(t *testing.T) {
+	t.Parallel()
+
+	p := NewICSProvider("https://example.com/cal.ics", nil)
+	if p.client == nil {
+		t.Fatal("expected client to be set to default http.Client")
+	}
+}
+
+func TestICSProviderName(t *testing.T) {
+	t.Parallel()
+
+	p := NewICSProvider("https://x", nil)
+	if p.Name() != "ics" {
+		t.Fatalf("expected name 'ics', got %q", p.Name())
+	}
+}

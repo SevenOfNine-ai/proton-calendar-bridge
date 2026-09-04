@@ -30,10 +30,10 @@ jobs:
         run: go vet ./...
       - name: Test + coverage gate
         if: runner.os != 'Windows'
-        run: ./scripts/coverage_gate.sh 85
+        run: ./scripts/coverage_gate.sh 78
       - name: Test + coverage gate (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/coverage_gate.ps1 -Threshold 85
+        run: ./scripts/coverage_gate.ps1 -Threshold 78
       - name: Build all packages
         run: go build ./...

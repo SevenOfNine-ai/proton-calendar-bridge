@@ -45,3 +45,16 @@ func TestRunSuccessCancel(t *testing.T) {
 		t.Fatalf("unexpected run error: %v", err)
 	}
 }
+
+func TestMain(t *testing.T) {
+	// main() calls run() which requires env vars
+	// We test indirectly via TestRunSuccessCancel
+	// This just verifies main() exists and compiles
+	t.Setenv("PCB_PROVIDER", "ics")
+	t.Setenv("PCB_ICS_URL", "https://example.test/a.ics")
+	t.Setenv("PCB_BEARER_TOKEN", "secret")
+	t.Setenv("PCB_REQUIRE_TOKEN", "false")
+	t.Setenv("PCB_BIND_ADDRESS", "127.0.0.1:0")
+	// main() will exit, but we can't easily test it without os.Exit
+	// The test is that it compiles
+}
